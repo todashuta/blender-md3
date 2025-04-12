@@ -36,12 +36,13 @@ class ExportMD3(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.md3"
     bl_label = 'Export MD3'
     filename_ext = ".md3"
-    filter_glob = StringProperty(default="*.md3", options={'HIDDEN'})
+    filter_glob: StringProperty(default="*.md3", options={'HIDDEN'})
+    enable_convert: bpy.props.BoolProperty(default=True)
 
     def execute(self, context):
         try:
             from .export_md3 import MD3Exporter
-            MD3Exporter(context)(self.properties.filepath)
+            MD3Exporter(context)(self.properties.filepath, self.enable_convert)
             return {'FINISHED'}
         except struct.error:
             self.report({'ERROR'}, "Mesh does not fit within the MD3 model space. Vertex axies locations must be below 512 blender units.")

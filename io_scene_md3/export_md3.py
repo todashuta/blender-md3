@@ -165,9 +165,13 @@ class MD3Exporter:
         self.scene.frame_set(self.scene.frame_start + i)
 
     def surface_start_frame(self, i):
+        from mathutils import Matrix
+        from math import radians
+        M = Matrix.Scale(39.3701, 4) @ Matrix.Rotation(radians(90), 4, 'Z')
         self.switch_frame(i)
         obj = bpy.context.view_layer.objects.active
-        self.mesh_matrix = obj.matrix_world
+        self.mesh_matrix = (M @ obj.matrix_world) if self.enable_convert else obj.matrix_world
+        #print(self.enable_convert, self.mesh_matrix.to_euler(), self.mesh_matrix.to_scale())
         obj.update_from_editmode()
         dg = bpy.context.evaluated_depsgraph_get()
         ob_eval = obj.evaluated_get(dg)
@@ -278,7 +282,8 @@ class MD3Exporter:
             **self.get_frame_data(i)
         )
 
-    def __call__(self, filename):
+    def __call__(self, filename, enable_convert):
+        self.enable_convert = enable_convert
         self.nFrames = self.scene.frame_end - self.scene.frame_start + 1
         self.surfNames = []
         self.tagNames = []
