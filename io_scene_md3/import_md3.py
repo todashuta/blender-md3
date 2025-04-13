@@ -85,8 +85,12 @@ class MD3Importer:
         self.mesh.polygons[i].use_smooth = True
 
     def read_surface_vert(self, i):
+        from mathutils import Matrix
+        from math import radians
+        M = Matrix.Scale(1/39.3701, 4) @ Matrix.Rotation(radians(-90), 4, 'Z')
         data = self.unpack(fmt.Vertex)
-        self.verts[i].co = mathutils.Vector((data.x, data.y, data.z))
+        v = mathutils.Vector((data.x, data.y, data.z))
+        self.verts[i].co = (M @ v) if self.enable_convert else v
         # ignoring data.normal here
 
     def read_surface_normals(self, i):
@@ -181,8 +185,9 @@ class MD3Importer:
     def post_settings(self):
         self.scene.frame_set(0)
 
-    def __call__(self, filename):
+    def __call__(self, filename, enable_convert):
         self.filename = filename
+        self.enable_convert = enable_convert
         with open(filename, 'rb') as file:
             self.file = file
 

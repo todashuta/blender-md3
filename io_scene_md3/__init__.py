@@ -23,11 +23,16 @@ class ImportMD3(bpy.types.Operator, ImportHelper):
     bl_idname = "import_scene.md3"
     bl_label = 'Import MD3'
     filename_ext = ".md3"
-    filter_glob = StringProperty(default="*.md3", options={'HIDDEN'})
+    filter_glob: StringProperty(default="*.md3", options={'HIDDEN'})
+    enable_convert: bpy.props.BoolProperty(
+            default=True,
+            name="正面方向とスケールの変換を行う",
+            description=("+X方向を正面・インチ単位として作成されたデータを\n"
+                         "-Y方向を正面・m単位として使えるように変換します"))
 
     def execute(self, context):
         from .import_md3 import MD3Importer
-        MD3Importer(context)(self.properties.filepath)
+        MD3Importer(context)(self.properties.filepath, self.enable_convert)
         return {'FINISHED'}
 
 
@@ -37,7 +42,11 @@ class ExportMD3(bpy.types.Operator, ExportHelper):
     bl_label = 'Export MD3'
     filename_ext = ".md3"
     filter_glob: StringProperty(default="*.md3", options={'HIDDEN'})
-    enable_convert: bpy.props.BoolProperty(default=True)
+    enable_convert: bpy.props.BoolProperty(
+            default=True,
+            name="正面方向とスケールの変換を行う",
+            description=("-Y方向を正面・m単位として作成されたデータを\n"
+                         "+X方向を正面・インチ単位として使えるように変換します"))
 
     def execute(self, context):
         try:
