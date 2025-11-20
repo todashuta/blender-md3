@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Quake 3 Model (.md3)",
     "author": "Vitaly Verhovodov, Aleksander Marhall",
-    "version": (0, 2, "2-p0"),
+    "version": (0, 2, "2-p1"),
     "blender": (4, 1, 0),
     "location": "File > Import-Export > Quake 3 Model",
     "description": "Quake 3 Model format (.md3)",
