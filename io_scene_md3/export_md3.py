@@ -29,29 +29,35 @@ def get_textures(material):
                 textures.append(tex)
     return textures
 
+
+def return_single_mat(uv_maps,materials):
+    if len(uv_maps) == 1:
+        return uv_maps.active.name, materials[0]
+    elif len(uv_maps) > 1:
+        print('Warning: Multiple Shaders or/and UV maps found, only first will be chosen')
+        return uv_maps.active.name, materials[0]
+
+
 def gather_shader_info(mesh):
     'Returning uvmap name, texture name list'
     uv_maps = mesh.uv_layers
+    materials = [] 
+    for mat in mesh.materials:
+        materials.append(mat.name)
 
-    for material in mesh.materials:
-        textures = get_textures(material)
-        
-        for texture_slot in textures:
-            if (
-                texture_slot is None
-            ):
-                continue
-
-            # one UV map can be used by many textures
     if len(uv_maps) <= 0:
         print('Warning: No UV maps found, zero filling will be used')
         return None, []
-    elif len(uv_maps) == 1:
-        return uv_maps.active.name, [uv_maps.active]
-    else:
-        print('Warning: Multiple UV maps found, only one will be chosen')
-        return uv_maps.active.name, [uv_maps.active]
+    
+    if len(materials) <= 0:
+        print('Warning: No Materials found, zero filling will be used')
+        return None, []
 
+    if len(materials) == 1:
+        return return_single_mat(uv_maps,materials)
+    else:
+        print('Warning: Multiple Shaders found, only first will be chosen')
+        return return_single_mat(uv_maps,materials)
 
 def gather_vertices(mesh, uvmap_data=None):
     md3vert_to_loop_map = []
@@ -120,7 +126,7 @@ class MD3Exporter:
 
     def pack_surface_shader(self, i):
         return fmt.Shader.pack(
-            name=prepare_name(self.mesh_shader_list[i].name),
+            name=prepare_name(self.mesh_shader_list),
             index=i,
         )
 
@@ -196,11 +202,15 @@ class MD3Exporter:
                     self.mesh_sk_abs = (a, b, (e - kblocks[a].frame) / (kblocks[b].frame - kblocks[a].frame))
 
     def pack_surface(self, surf_name):
+        self.scene.frame_set(self.scene.frame_start)
         obj = self.scene.objects[surf_name]
         bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.modifier_add(type='TRIANGULATE')  # no 4-gons or n-gons
+        tris_mod = obj.modifiers.new(name="Triangulate", type='TRIANGULATE')  # no 4-gons or n-gons
+        tris_mod.quad_method = 'FIXED'
+        obj.update_from_editmode()
         dg = bpy.context.evaluated_depsgraph_get()
-        self.mesh = obj.to_mesh(preserve_all_data_layers=True, depsgraph=dg)
+        ob_eval = obj.evaluated_get(dg)
+        self.mesh = ob_eval.to_mesh()
 
         self.mesh_uvmap_name, self.mesh_shader_list = gather_shader_info(self.mesh)
         self.mesh_md3vert_to_loop, self.mesh_loop_to_md3vert = gather_vertices(
@@ -210,8 +220,6 @@ class MD3Exporter:
         nShaders = len(self.mesh_shader_list)
         nVerts = len(self.mesh_md3vert_to_loop)
         nTris = len(self.mesh.polygons)
-
-        self.scene.frame_set(self.scene.frame_start)
 
         f = OffsetBytesIO(start_offset=fmt.Surface.size)
         f.mark('offShaders')
@@ -230,6 +238,7 @@ class MD3Exporter:
 
         # release here, to_mesh used for every frame
         bpy.ops.object.modifier_remove(modifier=obj.modifiers[-1].name)
+        ob_eval.to_mesh_clear()
 
         print('Surface {}: nVerts={}{} nTris={}{} nShaders={}{}'.format(
             surf_name,
@@ -248,6 +257,7 @@ class MD3Exporter:
             nTris=nTris,
             **f.getoffsets()
         ) + f.getvalue()
+
 
     def get_frame_data(self, i):
         center = mathutils.Vector((0.0, 0.0, 0.0))
