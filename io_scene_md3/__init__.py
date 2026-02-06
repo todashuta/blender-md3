@@ -55,9 +55,7 @@ class ExportMD3(bpy.types.Operator, ExportHelper):
             return {'FINISHED'}
         except struct.error:
             self.report({'ERROR'}, "Mesh does not fit within the MD3 model space. Vertex axies locations must be below 512 blender units.")
-        except ValueError as e:
-            self.report({'ERROR'}, str(e))
-        return {'CANCELLED'}
+            return {'CANCELLED'}
 
 
 def menu_func_import(self, context):
