@@ -2,6 +2,8 @@ from math import pi, sin, cos, atan2, acos
 
 from .utils import AnyStruct
 
+import numpy as np
+
 
 def string_from_bytes(b):
     return b.rstrip(b'\0').decode('utf-8', errors='ignore')
@@ -25,7 +27,7 @@ def encode_normal(n):
     if x == 0 and y == 0:
         return bytes((0, 0)) if z > 0 else bytes((128, 0))
     lon = int(atan2(y, x) * 255 / (2 * pi)) & 255
-    lat = int(acos(z) * 255 / (2 * pi)) & 255
+    lat = int(acos(np.clip(z, -1.0, 1.0)) * 255 / (2 * pi)) & 255
     return bytes((lat, lon))
 
 
