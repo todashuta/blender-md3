@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Quake 3 Model (.md3)",
     "author": "Vitaly Verhovodov, Aleksander Marhall",
-    "version": (0, 2, "2-p2"),
+    "version": (0, 2, "2-p3"),
     "blender": (4, 1, 0),
     "location": "File > Import-Export > Quake 3 Model",
     "description": "Quake 3 Model format (.md3)",
@@ -47,11 +47,16 @@ class ExportMD3(bpy.types.Operator, ExportHelper):
             name="正面方向とスケールの変換を行う",
             description=("-Y方向を正面・m単位として作成されたデータを\n"
                          "+X方向を正面・インチ単位として使えるように変換します"))
+    adjust_scale_bug: bpy.props.BoolProperty(
+            default=True,
+            name="バグ対処のサイズ補正を行う",
+            description=("寸法が小さく読み込まれるバグの対処として大きくして出力します。\n"
+                         "（1.016倍して出力します）"))
 
     def execute(self, context):
         try:
             from .export_md3 import MD3Exporter
-            MD3Exporter(context)(self.properties.filepath, self.enable_convert)
+            MD3Exporter(context)(self.properties.filepath, self.enable_convert, self.adjust_scale_bug)
             return {'FINISHED'}
         except struct.error:
             self.report({'ERROR'}, "Mesh does not fit within the MD3 model space. Vertex axies locations must be below 512 blender units.")
