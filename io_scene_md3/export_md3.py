@@ -107,6 +107,16 @@ class MD3Exporter:
     def scene(self):
         return self.context.scene
 
+    def get_mesh_matrix(self, obj):
+        from mathutils import Matrix
+        from math import radians
+        M = obj.matrix_world.copy()
+        if self.enable_convert:
+            M = Matrix.Scale(39.3701, 4) @ Matrix.Rotation(radians(90), 4, 'Z') @ M
+        if self.adjust_scale_bug:
+            M = Matrix.Scale(0.254/0.25, 4) @ M
+        return M
+
     def pack_tag(self, name):
         tag = self.scene.objects[name]
         m = tag.matrix_basis.transposed()
@@ -171,17 +181,12 @@ class MD3Exporter:
         self.scene.frame_set(self.scene.frame_start + i)
 
     def surface_start_frame(self, i):
-        from mathutils import Matrix
-        from math import radians
         self.switch_frame(i)
         obj = bpy.context.view_layer.objects.active
-        M = obj.matrix_world.copy()
-        if self.enable_convert:
-            M = Matrix.Scale(39.3701, 4) @ Matrix.Rotation(radians(90), 4, 'Z') @ M
-        if self.adjust_scale_bug:
-            M = Matrix.Scale(0.254/0.25, 4) @ M
-        self.mesh_matrix = M
+
+        self.mesh_matrix = self.get_mesh_matrix(obj)
         #print(self.enable_convert, self.mesh_matrix.to_euler(), self.mesh_matrix.to_scale())
+
         obj.update_from_editmode()
         dg = bpy.context.evaluated_depsgraph_get()
         ob_eval = obj.evaluated_get(dg)
@@ -212,14 +217,7 @@ class MD3Exporter:
         tris_mod = obj.modifiers.new(name="Triangulate", type='TRIANGULATE')  # no 4-gons or n-gons
         tris_mod.quad_method = 'FIXED'
 
-        from mathutils import Matrix
-        from math import radians
-        M = obj.matrix_world.copy()
-        if self.enable_convert:
-            M = Matrix.Scale(39.3701, 4) @ Matrix.Rotation(radians(90), 4, 'Z') @ M
-        if self.adjust_scale_bug:
-            M = Matrix.Scale(0.254/0.25, 4) @ M
-        self.mesh_matrix = M
+        self.mesh_matrix = self.get_mesh_matrix(obj)
 
         obj.update_from_editmode()
         dg = bpy.context.evaluated_depsgraph_get()
