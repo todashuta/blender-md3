@@ -6,6 +6,7 @@
 import bpy
 import mathutils
 import os.path
+from math import radians
 
 from . import fmt_md3 as fmt
 
@@ -30,11 +31,16 @@ def guess_texture_filepath(modelpath, imagepath):
         yield nameguess + ext
 
 
-def get_tag_matrix_basis(data):
+def get_tag_matrix_basis(data, convert_matrix=None):
     basis = mathutils.Matrix.Identity(4)
     for j in range(3):
         basis[j].xyz = data.axis[j::3]
     basis.translation = mathutils.Vector(data.origin)
+    if convert_matrix is not None:
+        # convert_matrix also shrinks to meters; keep that for the location only,
+        # otherwise the empties themselves would become tiny
+        loc, rot, _ = (convert_matrix @ basis).decompose()
+        basis = mathutils.Matrix.LocRotScale(loc, rot, None)
     return basis
 
 
@@ -63,13 +69,13 @@ class MD3Importer:
         tag.name = data.name
         tag.empty_display_type = 'ARROWS'
         tag.rotation_mode = 'QUATERNION'
-        tag.matrix_basis = get_tag_matrix_basis(data)
+        tag.matrix_basis = get_tag_matrix_basis(data, self.convert_matrix)
         return tag
 
     def read_tag_frame(self, i):
         tag = self.tags[i % self.header.nTags]
         data = self.unpack(fmt.Tag)
-        tag.matrix_basis = get_tag_matrix_basis(data)
+        tag.matrix_basis = get_tag_matrix_basis(data, self.convert_matrix)
         frame = i // self.header.nTags
         tag.keyframe_insert('location', frame=frame, group='LocRot')
         tag.keyframe_insert('rotation_quaternion', frame=frame, group='LocRot')
@@ -85,12 +91,9 @@ class MD3Importer:
         self.mesh.polygons[i].use_smooth = True
 
     def read_surface_vert(self, i):
-        from mathutils import Matrix
-        from math import radians
-        M = Matrix.Scale(1/39.3701, 4) @ Matrix.Rotation(radians(-90), 4, 'Z')
         data = self.unpack(fmt.Vertex)
         v = mathutils.Vector((data.x, data.y, data.z))
-        self.verts[i].co = (M @ v) if self.enable_convert else v
+        self.verts[i].co = v if self.convert_matrix is None else self.convert_matrix @ v
         # ignoring data.normal here
 
     def read_surface_normals(self, i):
@@ -128,9 +131,13 @@ class MD3Importer:
     def read_surface_shader(self, i):
         data = self.unpack(fmt.Shader)
 
-        shader = self.material.node_tree.nodes["Principled BSDF"]
-        texture = self.material.node_tree.nodes.new('ShaderNodeTexImage')
-        self.material.node_tree.links.new(shader.inputs['Base Color'], texture.outputs['Color'])
+        nodes = self.material.node_tree.nodes
+        # not nodes["Principled BSDF"]: node names are translated when
+        # "Translate New Data" is on (e.g. Japanese UI), so look it up by type
+        shader = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        texture = nodes.new('ShaderNodeTexImage')
+        if shader is not None:
+            self.material.node_tree.links.new(shader.inputs['Base Color'], texture.outputs['Color'])
 
         for fname in guess_texture_filepath(self.filename, data.name):
             if '\0' in fname:  # preventing ValueError: embedded null byte
@@ -187,7 +194,11 @@ class MD3Importer:
 
     def __call__(self, filename, enable_convert):
         self.filename = filename
-        self.enable_convert = enable_convert
+        # shared by vertices and tags so both end up in the same space
+        self.convert_matrix = None
+        if enable_convert:
+            self.convert_matrix = (mathutils.Matrix.Scale(1 / 39.3701, 4)
+                                   @ mathutils.Matrix.Rotation(radians(-90), 4, 'Z'))
         with open(filename, 'rb') as file:
             self.file = file
 

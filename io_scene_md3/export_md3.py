@@ -15,6 +15,13 @@ from .utils import OffsetBytesIO
 
 nums = re.compile(r'\.\d{3}$')
 
+# md3 names are char[64]; Quake 3 reads them as NUL-terminated strings
+MAX_NAME_BYTES = 63
+
+
+class MD3ExportError(Exception):
+    pass
+
 
 def prepare_name(name):
     if nums.findall(name):
@@ -124,13 +131,43 @@ class MD3Exporter:
             M = Matrix.Scale(0.254/0.25, 4) @ M
         return M
 
+    def check_name(self, kind, name):
+        # an error rather than silent truncation: .skin files look surfaces up by name,
+        # and cutting UTF-8 in the middle of a character would break the match
+        size = len(fmt.string_to_bytes(name))
+        if size > MAX_NAME_BYTES:
+            raise MD3ExportError('{}名 "{}" が長すぎます（{} バイト、上限 {} バイト）'.format(
+                kind, name, size, MAX_NAME_BYTES))
+
+    def check_duplicates(self, kind, obj_names):
+        # only a warning: sharing a name (e.g. Body and Body.001) may be intended
+        seen = defaultdict(list)
+        for n in obj_names:
+            seen[prepare_name(n)].append(n)
+        for exported, originals in seen.items():
+            if len(originals) > 1:
+                self.warnings.append('{}名 "{}" が重複しています: {}'.format(
+                    kind, exported, ', '.join(originals)))
+
+    def validate_names(self):
+        self.check_name('モデル', self.scene.name)
+        for n in self.surfNames:
+            self.check_name('サーフェス', prepare_name(n))
+        for n in self.tagNames:
+            self.check_name('タグ', prepare_name(n))
+        self.check_duplicates('サーフェス', self.surfNames)
+        self.check_duplicates('タグ', self.tagNames)
+
     def pack_tag(self, name):
         tag = self.scene.objects[name]
-        m = tag.matrix_basis.transposed()
+        # same matrix as meshes so tags stay attached to them after conversion;
+        # scale is dropped because md3 tag axes must be unit vectors
+        loc, rot, _ = self.get_mesh_matrix(tag).decompose()
+        axes = rot.to_matrix()
         return fmt.Tag.pack(
             name=prepare_name(tag.name),
-            origin=tuple(tag.location),
-            axis=sum([tuple(m[j].xyz) for j in range(3)], ()),
+            origin=tuple(loc),
+            axis=sum([tuple(axes.col[j]) for j in range(3)], ()),
         )
 
     def pack_animated_tags(self):
@@ -197,8 +234,8 @@ class MD3Exporter:
 
         obj.update_from_editmode()
         dg = bpy.context.evaluated_depsgraph_get()
-        ob_eval = obj.evaluated_get(dg)
-        self.mesh = ob_eval.to_mesh()
+        self.mesh_owner = obj.evaluated_get(dg)
+        self.mesh = self.mesh_owner.to_mesh()
 
         self.mesh_sk_rel = None
         self.mesh_sk_abs = None
@@ -224,15 +261,31 @@ class MD3Exporter:
         bpy.context.view_layer.objects.active = obj
         tris_mod = obj.modifiers.new(name="Triangulate", type='TRIANGULATE')  # no 4-gons or n-gons
         tris_mod.quad_method = 'FIXED'
+        self.mesh_owner = None
+        # the temporary modifier must not be left on the user's object when packing fails
+        # (struct.error on out-of-range vertices is an expected failure)
+        try:
+            return self.pack_surface_data(obj)
+        finally:
+            # release here, to_mesh used for every frame
+            if self.mesh_owner is not None:
+                self.mesh_owner.to_mesh_clear()
+                self.mesh_owner = None
+            # not bpy.ops.object.modifier_remove: it depends on context and
+            # may pick a user's own modifier with the same name
+            obj.modifiers.remove(tris_mod)
 
+    def pack_surface_data(self, obj):
         self.mesh_matrix = self.get_mesh_matrix(obj)
 
         obj.update_from_editmode()
         dg = bpy.context.evaluated_depsgraph_get()
-        ob_eval = obj.evaluated_get(dg)
-        self.mesh = ob_eval.to_mesh()
+        self.mesh_owner = obj.evaluated_get(dg)
+        self.mesh = self.mesh_owner.to_mesh()
 
         self.mesh_uvmap_name, self.mesh_shader_list = gather_shader_info(self.mesh)
+        if self.mesh_shader_list:
+            self.check_name('シェーダー', prepare_name(self.mesh_shader_list))
         self.mesh_md3vert_to_loop, self.mesh_loop_to_md3vert = gather_vertices(
             self.mesh,
             None if self.mesh_uvmap_name is None else self.mesh.uv_layers[self.mesh_uvmap_name].data)
@@ -256,12 +309,8 @@ class MD3Exporter:
 
         f.mark('offEnd')
 
-        # release here, to_mesh used for every frame
-        bpy.ops.object.modifier_remove(modifier=obj.modifiers[-1].name)
-        ob_eval.to_mesh_clear()
-
         print('Surface {}: nVerts={}{} nTris={}{} nShaders={}{}'.format(
-            surf_name,
+            obj.name,
             nVerts, ' (Too many!)' if nVerts > 4096 else '',
             nTris, ' (Too many!)' if nTris > 8192 else '',
             nShaders, ' (Too many!)' if nShaders > 256 else '',
@@ -325,6 +374,11 @@ class MD3Exporter:
                 self.surfNames.append(o.name)
             elif o.type == 'EMPTY' and o.empty_display_type == 'ARROWS':
                 self.tagNames.append(o.name)
+        self.warnings = []
+        # before packing, so nothing is written or modified for a bad name
+        self.validate_names()
+        for w in self.warnings:
+            print('WARNING:', w)
         self.mesh_vco = defaultdict(list)
 
         tags_bin = self.pack_animated_tags()

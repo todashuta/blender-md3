@@ -54,10 +54,16 @@ class ExportMD3(bpy.types.Operator, ExportHelper):
                          "（1.016倍して出力します）"))
 
     def execute(self, context):
+        from .export_md3 import MD3Exporter, MD3ExportError
+        exporter = MD3Exporter(context)
         try:
-            from .export_md3 import MD3Exporter
-            MD3Exporter(context)(self.properties.filepath, self.enable_convert, self.adjust_scale_bug)
+            exporter(self.properties.filepath, self.enable_convert, self.adjust_scale_bug)
+            for w in exporter.warnings:
+                self.report({'WARNING'}, w)
             return {'FINISHED'}
+        except MD3ExportError as e:
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
         except struct.error:
             self.report({'ERROR'}, "Mesh does not fit within the MD3 model space. Vertex axies locations must be below 512 blender units.")
             return {'CANCELLED'}
