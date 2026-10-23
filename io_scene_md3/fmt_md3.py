@@ -13,12 +13,14 @@ def string_to_bytes(s):
     return s.encode('utf-8')
 
 
+# byte order follows Quake 3 (q3map2 NormalToLatLong):
+# b[0] = polar angle from +Z, b[1] = azimuth around Z
 def decode_normal(b):
-    lat = b[0] / 255.0 * 2 * pi
-    lon = b[1] / 255.0 * 2 * pi
-    x = cos(lat) * sin(lon)
-    y = sin(lat) * sin(lon)
-    z = cos(lon)
+    polar = b[0] / 255.0 * 2 * pi
+    azimuth = b[1] / 255.0 * 2 * pi
+    x = cos(azimuth) * sin(polar)
+    y = sin(azimuth) * sin(polar)
+    z = cos(polar)
     return (x, y, z)
 
 
@@ -26,9 +28,9 @@ def encode_normal(n):
     x, y, z = n
     if x == 0 and y == 0:
         return bytes((0, 0)) if z > 0 else bytes((128, 0))
-    lon = int(atan2(y, x) * 255 / (2 * pi)) & 255
-    lat = int(acos(np.clip(z, -1.0, 1.0)) * 255 / (2 * pi)) & 255
-    return bytes((lat, lon))
+    azimuth = int(atan2(y, x) * 255 / (2 * pi)) & 255
+    polar = int(acos(np.clip(z, -1.0, 1.0)) * 255 / (2 * pi)) & 255
+    return bytes((polar, azimuth))
 
 
 VERTEX_SCALE = 64.0

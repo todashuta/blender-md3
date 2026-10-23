@@ -59,14 +59,21 @@ def gather_shader_info(mesh):
         print('Warning: Multiple Shaders found, only first will be chosen')
         return return_single_mat(uv_maps,materials)
 
-def gather_vertices(mesh, mesh_matrix, uvmap_data=None):
+def get_normal_matrix(mesh_matrix):
+    # 4x4 @ Vector3 treats the vector as a point (adds translation, keeps scale),
+    # so normals need the inverse-transpose of the 3x3 part instead
+    return mesh_matrix.to_3x3().inverted_safe().transposed()
+
+
+def gather_vertices(mesh, uvmap_data=None):
     md3vert_to_loop_map = []
     loop_to_md3vert_map = []
     index = {}
     for i, loop in enumerate(mesh.loops):
+        # the key only needs to tell normals apart, so transforming them here is unnecessary
         key = (
             loop.vertex_index,
-            tuple(mesh_matrix @ loop.normal),
+            tuple(loop.normal),
             None if uvmap_data is None else tuple(uvmap_data[i].uv),
         )
         md3id = index.get(key, None)
@@ -167,7 +174,7 @@ class MD3Exporter:
         vert_id = self.mesh.loops[loop_id].vertex_index
         return fmt.Vertex.pack(
             *self.get_evaluated_vertex_co(frame, vert_id),
-            normal=tuple(self.mesh_matrix @ self.mesh.loops[loop_id].normal))
+            normal=tuple((self.normal_matrix @ self.mesh.loops[loop_id].normal).normalized()))
 
     def pack_surface_ST(self, i):
         if self.mesh_uvmap_name is None:
@@ -185,6 +192,7 @@ class MD3Exporter:
         obj = bpy.context.view_layer.objects.active
 
         self.mesh_matrix = self.get_mesh_matrix(obj)
+        self.normal_matrix = get_normal_matrix(self.mesh_matrix)
         #print(self.enable_convert, self.mesh_matrix.to_euler(), self.mesh_matrix.to_scale())
 
         obj.update_from_editmode()
@@ -227,7 +235,6 @@ class MD3Exporter:
         self.mesh_uvmap_name, self.mesh_shader_list = gather_shader_info(self.mesh)
         self.mesh_md3vert_to_loop, self.mesh_loop_to_md3vert = gather_vertices(
             self.mesh,
-            self.mesh_matrix,
             None if self.mesh_uvmap_name is None else self.mesh.uv_layers[self.mesh_uvmap_name].data)
 
         nShaders = len(self.mesh_shader_list)
